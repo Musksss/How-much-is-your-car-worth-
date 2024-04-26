@@ -1,0 +1,429 @@
+---
+title: "PAC Report"
+author: "Muskan Shokeen"
+date: "2023-12-05"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+##INTRODUCTION
+
+
+The Kaggle Car Price Prediction competition posed a captivating challenge: forecasting the sale price of used cars based on a myriad of features and conditions. The objective was to craft a sophisticated model capable of delivering accurate predictions. This report now serves as a retrospective narrative, detailing the exploration, experimentation, and the eventual selection of the most effective model to tackle this intriguing problem in predictive modeling.
+
+Throughout this report, the steps taken in data exploration, preprocessing, and model selection will be detailed. The journey involved handling missing data, engineering features, exploring different models, and ultimately arriving at the best model to fulfill the competition's objective. The R code snippets provided offer insights into the comprehensive analysis conducted during the competition.
+
+Various libraries were utilized, including dplyr, ggplot, caret, mice, ranger, randomforest, and more. An array of models was explored, such as xgboost, linear regression, multiple regression, random forest, and ranger, each contributing valuable insights to the analytical process.
+
+Despite making progress, there were inevitable issues and errors. This report meticulously documents the aspects that proved successful, providing insights into effective data processing for models with favorable outcomes. Subsequently, it navigates through encountered bugs and challenges, shedding light on diagnostic steps and fixes applied to models and methods that fell short or yielded a suboptimal root mean square error (RMSE).
+
+Structured to provide readers with a coherent journey through successful strategies and encountered setbacks during the Kaggle Car Price Prediction competition, this report aims to offer a retrospective understanding of the analytical journey undertaken to address the complexity of predicting car prices based on a myriad of features and conditions.
+
+####READING THE DATASETS
+The analysis commenced by reading the dataset, where the first 10-20 rows were carefully examined to gain a comprehensive understanding of both the scoring and analysis datasets. This initial exploration provided valuable insights into the structure and content of the data, setting the foundation for subsequent analytical steps.
+
+```{r}
+data = read.csv('/Users/muskan/Desktop/Columbia Documents/Semester 1/Frameworks_and_Methods_1/Datasets/analysisData copy.csv')
+head(data,20)
+
+# Check the class of 'data'
+class(data)
+
+scoring = read.csv('/Users/muskan/Desktop/Columbia Documents/Semester 1/Frameworks_and_Methods_1/Datasets/scoringData copy.csv')
+head(scoring,20)
+```
+
+###DATA PREPARATION
+
+For data preparation, the initial step involved imputing NA values and blanks in both the scoring and analysis datasets. This was necessary due to the presence of missing values, and addressing them at the outset ensured a more robust dataset for subsequent analysis.
+
+To impute NAs for numerical values, the MICE library was employed, utilizing the RF (Random Forest) method. The application of MICE with the ranger method facilitated a comprehensive imputation process, enhancing the dataset's completeness and reliability for further analytical procedures.
+
+```{r}
+library(mice)
+mice_data_rf <- mice(data, method = "rf", m = 5)
+mice_scoring_rf <- mice(scoring, method = "rf", m = 5)
+
+complete_data <- complete(mice_data_rf)
+complete_scoring <- complete(mice_scoring_rf)
+
+```
+
+Check for remaining NA values in Analysis Dataset
+
+```{r}
+missing_count <- colSums(is.na(complete_data))
+print(missing_count)
+```
+It was observed that only one variable, namely the Exterior color variable, still contained missing values. To address this, a decision was made to impute the missing values, assigning them the placeholder "Unknown."
+```{r}
+complete_data$exterior_color[is.na(complete_data$exterior_color) | complete_data$exterior_color == ""] <- "unknown"
+```
+
+Check for remaining NA values in Scoring Dataset
+```{r}
+missingcount <- colSums(is.na(complete_scoring))
+print(missingcount)
+```
+In the scoring data, no missing values were identified, eliminating the need for any further imputation.
+
+The exploration progressed with a thorough review of unique values for each column, leading to the strategic reduction of certain levels. This was implemented to enhance the efficiency of subsequent analyses and model building. The rationale behind reducing levels lies in optimizing the performance of random forest models. By consolidating and simplifying categorical variables, the model's interpretability and computational efficiency are improved, ensuring a more effective and streamlined approach to prediction and analysis.
+
+```{r}
+# Finding the number of unique values for each column
+num_unique_values <- sapply(complete_data, function(x) length(unique(x)))
+
+# Printing the number of unique values
+print(num_unique_values)
+```
+
+Certain variables presented a challenge with an excessive number of levels or unique values during the modeling process. Consequently, a strategic decision was made to address this issue by employing level reduction, consolidating these numerous levels into a more manageable "other" category. This approach aimed to mitigate potential complications associated with modeling while ensuring the dataset's suitability for subsequent analytical endeavors.
+
+The dataset revealed considerable challenges with certain categorical variables. Specifically, the variable 'trim_name' exhibited an unwieldy 2600 levels, while 'description' boasted an overwhelming 36585 unique values. Similarly, both 'interior' and 'exterior' colors exceeded 2500 and 2800 levels, respectively. Moreover, 'major options' presented a formidable challenge with over 11000 values. To streamline the dataset and facilitate modeling, a decision was made to implement a reduction strategy, consolidating these numerous levels into more manageable categories.
+
+####Level reduction
+```{r}
+# for analysis data
+threshold = 10 
+frequency = table(complete_data$trim_name)
+raretrims = names(frequency[frequency < threshold])
+complete_data$trim_name <- ifelse(complete_data$trim_name %in% raretrims, 'other', complete_data$trim_name)
+
+threshold = 10 
+frequency = table(complete_data$description)
+raretrims = names(frequency[frequency < threshold])
+complete_data$description <- ifelse(complete_data$description %in% raretrims, 'other', complete_data$description)
+
+threshold = 10 
+frequency = table(complete_data$interior_color)
+raretrims = names(frequency[frequency < threshold])
+complete_data$interior_color <- ifelse(complete_data$interior_color %in% raretrims, 'other', complete_data$interior_color)
+
+threshold = 10 
+frequency = table(complete_data$exterior_color)
+raretrims = names(frequency[frequency < threshold])
+complete_data$exterior_color <- ifelse(complete_data$exterior_color %in% raretrims, 'other', complete_data$exterior_color)
+
+threshold = 10 
+frequency = table(complete_data$major_options)
+raretrims = names(frequency[frequency < threshold])
+complete_data$major_options <- ifelse(complete_data$major_options %in% raretrims, 'other', complete_data$major_options)
+
+
+# for scoring data
+threshold = 10 
+frequency = table(complete_scoring$trim_name)
+raretrims = names(frequency[frequency < threshold])
+complete_scoring$trim_name <- ifelse(complete_scoring$trim_name %in% raretrims, 'other', complete_scoring$trim_name)
+
+threshold = 10 
+frequency = table(complete_scoring$description)
+raretrims = names(frequency[frequency < threshold])
+complete_scoring$description <- ifelse(complete_scoring$description %in% raretrims, 'other', complete_scoring$description)
+
+threshold = 10 
+frequency = table(complete_scoring$interior_color)
+raretrims = names(frequency[frequency < threshold])
+complete_scoring$interior_color <- ifelse(complete_scoring$interior_color %in% raretrims, 'other', complete_scoring$interior_color)
+
+threshold = 10 
+frequency = table(complete_scoring$exterior_color)
+raretrims = names(frequency[frequency < threshold])
+complete_scoring$exterior_color <- ifelse(complete_scoring$exterior_color %in% raretrims, 'other', complete_scoring$exterior_color)
+
+threshold = 10 
+frequency = table(complete_scoring$major_options)
+raretrims = names(frequency[frequency < threshold])
+complete_scoring$major_options <- ifelse(complete_scoring$major_options %in% raretrims, 'other', complete_scoring$major_options)
+```
+Rechecking the levels for variables
+
+```{r}
+num_unique_values <- sapply(complete_data, function(x) length(unique(x)))
+
+# Printing the number of unique values
+print(num_unique_values)
+```
+
+The exploration successfully addressed the challenge of an excessive number of unique values in certain variables. Subsequently, a decision was made to convert categorical values to factors, a crucial step in preparing the data for effective modeling. Before proceeding, a thorough check for any remaining NA values was conducted to ensure the dataset's completeness and readiness for the upcoming modeling phase.
+
+####Recheck the data for NAs
+```{r}
+missing_count <- colSums(is.na(complete_data))
+print(missing_count)
+```
+
+####Converting Categorical Variables into Factors
+
+```{r}
+#FOR ANALYSIS DATA
+#categorical and numerical variables
+categorical_vars <- c('make_name', 'model_name', 'trim_name', 'body_type', 'fuel_type', 'transmission', 'wheel_system', 'exterior_color', 'major_options', 'transmission_display','torque','power','engine_type','description','interior_color','fleet','frame_damaged','franchise_dealer','franchise_make','has_accidents','isCab','is_new','listing_color','salvage')
+numerical_vars <- c('fuel_tank_volume_gallons', 'highway_fuel_economy', 'city_fuel_economy', 'wheelbase_inches', 'back_legroom_inches', 'length_inches', 'width_inches', 'height_inches', 'engine_displacement', 'horsepower', 'daysonmarket', 'maximum_seating', 'year', 'mileage', 'owner_count', 'seller_rating') # Add other numerical columns as necessary
+
+
+# Convert categorical variables to factors
+library(dplyr)
+complete_data <- complete_data|>
+  mutate(across(all_of(categorical_vars), factor))
+
+#FOR SCORING DATA
+complete_scoring <- complete_scoring|>
+  mutate(across(all_of(categorical_vars), factor))
+
+```
+
+##CORRELATION
+
+An examination was undertaken to assess the correlation between several variables and the price variable. This analytical step aimed to discern the relationships between different features and the target variable, offering valuable insights. The insights derived from this correlation analysis played a pivotal role in guiding the selection of variables to be incorporated into the subsequent random forest model.
+
+```{r}
+# Select only numeric columns
+numeric_data <- complete_data[, sapply(complete_data, is.numeric)]
+
+# Calculate correlations
+correlation_matrix <- cor(numeric_data)
+
+cor_with_target <- correlation_matrix[, "price"]
+
+# Filter out non-numeric variables
+numeric_vars <- sapply(complete_data, is.numeric)
+
+# Sort the correlation values in descending order for numeric variables
+sorted_correlation <- sort(cor_with_target[numeric_vars], decreasing = TRUE)
+
+# Print or inspect the sorted correlation values
+print(sorted_correlation)
+```
+
+
+The analysis revealed notable correlations between certain variables and the price variable. Specifically, width inches, length inches, and back legroom inches, along with seller rating, exhibited positive correlations with the price. The correlation coefficients were as follows: width inches (0.4631), length inches (0.4268), back legroom inches (0.2979), and seller rating (0.0931). Conversely, mileage demonstrated a negative correlation with the price.
+
+```{r}
+library(ggcorrplot)
+ggcorrplot(cor(numeric_data),
+           method = 'square',
+           type = 'lower',
+           show.diag = F,
+           colors = c('#e9a3c9', '#f7f7f7', '#a1d76a'))
+```
+Considering the correlation analysis results, the decision was made to exclude variables with zero or close-to-zero correlation from further consideration. In this instance, the variables not included in the modeling process were days on market, front legroom inches, ID, and seller rating.
+
+##SPLITTING THE DATA
+
+Following this, the dataset was partitioned into training and testing sets. This pivotal step allowed for the training of the model on one subset of the data and the subsequent evaluation of its performance on the other. The data splitting ensured a robust assessment of the model's efficacy, providing insights into its generalization capabilities and allowing for a comprehensive understanding of how well the model performs on new, unseen data.
+
+```{r}
+library(caret)
+set.seed(1031)
+split = createDataPartition(y = complete_data$price, p = 0.75, list = F,groups = 10)
+complete_data_train = complete_data[split,]
+complete_data_test = complete_data[-split,]
+```
+##BUILDING THE MODEL
+
+The model-building process unfolded as various tuning methods and different types of variables were explored. A comprehensive exploration involved considering 7-8 different models before finalizing the one that yielded the lowest score. This iterative approach aimed to systematically assess and refine the predictive capabilities of each model, ultimately identifying the optimal configuration that resulted in the most accurate predictions. The rigorous examination of diverse tuning methods and variable types contributed to the selection of a robust model, aligning with the objective of achieving the lowest possible score, indicative of enhanced predictive performance.
+
+###Initial Random Forest Model
+
+The initial random forest model was constructed using the ranger algorithm, incorporating all variables in the dataset. The model aimed to establish a baseline for performance before any tuning.
+
+```{r}
+library(ranger)
+
+set.seed(608)
+ranger1 = ranger(price~.,data = complete_data_train)
+```
+
+Subsequently, the model's performance was evaluated using the test dataset, and the root mean square error (RMSE) was computed.
+```{r}
+pred = predict(ranger1, data = complete_data_test)
+rmse_forest_ranger = sqrt(mean((pred$predictions - complete_data_test$price)^2)); rmse_forest_ranger
+```
+
+The initial RMSE was observed to be 3510.26, prompting further efforts to tune the model and enhance its predictive accuracy.
+
+###Tuning the Random Forest Model
+
+Tuning of the random forest model involved the use of the train function from the caret package. The process focused on optimizing hyperparameters, such as mtry, splitrule, and min.node.size, to improve the model's performance.
+
+```{r}
+trControl=trainControl(method="cv",number=3)
+tuneGrid = expand.grid(mtry=10, 
+                       splitrule = c('variance','maxstat'), 
+                       min.node.size = c(12,20,28))
+set.seed(617)
+cvModel = train(price~.,
+                data=complete_data_train,
+                method="ranger",
+                num.trees=1000,
+                trControl=trControl,
+                tuneGrid=tuneGrid )
+
+print(cvModel$bestTune$min.node.size); print(cvModel$bestTune$splitrule)
+
+cv_forest_ranger = ranger(price~.,
+                          data=complete_data_train,
+                          num.trees = 1000, 
+                          mtry=cvModel$bestTune$mtry, 
+                          min.node.size = cvModel$bestTune$min.node.size, 
+                          splitrule = cvModel$bestTune$splitrule)
+```
+The tuning process identified that using variance as the split rule and mtry 12 resulted in a better RMSE. Subsequently, a further round of tuning was initiated by increasing the number of trees to 1200. The tuning process, with an increased number of trees and optimized hyperparameters, aimed to refine the random forest model and achieve a lower RMSE, ultimately enhancing its predictive capabilities.
+```{r}
+trControl=trainControl(method="cv",number=3)
+tuneGrid = expand.grid(mtry=12, 
+                       splitrule = c('variance'), 
+                       min.node.size = c(10,12,15))
+set.seed(617)
+cvModel = train(price~.,
+                data=complete_data_train,
+                method="ranger",
+                num.trees=1200,
+                trControl=trControl,
+                tuneGrid=tuneGrid )
+
+print(cvModel$bestTune$min.node.size); print(cvModel$bestTune$splitrule)
+
+cv_forest_ranger = ranger(price~.,
+                          data=complete_data_train,
+                          num.trees = 1200, 
+                          mtry=12, 
+                          min.node.size = cvModel$bestTune$min.node.size, 
+                          splitrule = cvModel$bestTune$splitrule)
+
+pred = predict(cv_forest_ranger, data = complete_data_test)
+rmse_forest_ranger = sqrt(mean((pred$predictions - complete_data_test$price)^2)); rmse_forest_ranger
+
+```
+
+```{r}
+#The final model
+cv_forest_ranger = ranger(price~.,
+                          data=complete_data_train,
+                          num.trees = 1200, 
+                          mtry=15, 
+                          min.node.size = 12, 
+                          splitrule = 'variance')
+
+pred = predict(cv_forest_ranger, data = complete_data_test)
+rmse_forest_ranger = sqrt(mean((pred$predictions - complete_data_test$price)^2)); rmse_forest_ranger
+```
+
+```{r}
+cv_forest_ranger = ranger(price~.,
+                          data=complete_data_train,
+                          num.trees = 1200, 
+                          mtry=16, 
+                          min.node.size = 12, 
+                          splitrule = 'variance')
+
+pred = predict(cv_forest_ranger, data = complete_data_test)
+rmse_forest_ranger = sqrt(mean((pred$predictions - complete_data_test$price)^2)); rmse_forest_ranger
+```
+
+
+```{r}
+cv_forest_ranger = ranger(price~.,
+                          data=complete_data_train,
+                          num.trees = 1500, 
+                          mtry=15, 
+                          min.node.size = 12, 
+                          splitrule = 'variance')
+
+pred = predict(cv_forest_ranger, data = complete_data_test)
+rmse_forest_ranger = sqrt(mean((pred$predictions - complete_data_test$price)^2)); rmse_forest_ranger
+```
+
+Subsequently, the final model configuration was determined based on the combination that yielded the lowest root mean square error (RMSE). The optimal hyperparameter values were identified as an mtry of __15__, the number of trees set to __1200__, and a min.node.size of __12__.
+
+###Removing and Selecting Variables
+
+- In the process of model development, a judicious application of __common sense__ played a crucial role in guiding the removal of variables deemed irrelevant or redundant, thereby preventing overfitting.
+- Variables characterized by an __excessive number of missing values__ were systematically excluded from consideration during the model-building phase. This precautionary measure aimed to mitigate potential inaccuracies introduced by extensive imputation.
+- Through rigorous __testing and iterative experimentation__ involving various combinations of variables, specific features were identified. Notably, these variables consistently demonstrated the ability to yield the lowest RMSE, contributing significantly to model optimization.
+
+This empirical and methodical approach, based on past trials, not only refined the model for improved predictive accuracy but also provided valuable insights into the selection of variables conducive to lowering the RMSE.
+
+
+```{r}
+forest_ranger = ranger(price~make_name + model_name + trim_name + body_type+ fuel_tank_volume_gallons + fuel_type + highway_fuel_economy + city_fuel_economy + power + torque + transmission + transmission_display + wheel_system + wheel_system_display + wheelbase_inches + back_legroom_inches + front_legroom_inches + length_inches + width_inches + height_inches + engine_type + engine_displacement + horsepower + daysonmarket + description + interior_color + major_options + maximum_seating + year + fleet+ has_accidents + isCab + is_new + mileage + owner_count + salvage + seller_rating,data = complete_data_train, 
+                       num.trees = 1200, mtry = 15, splitrule='variance')
+
+pred = predict(forest_ranger, data = complete_data_test)
+rmse_forest_ranger = sqrt(mean((pred$predictions - complete_data_test$price)^2)); rmse_forest_ranger
+```
+
+```{r}
+forest_ranger = ranger(price~make_name + model_name + trim_name + body_type+ fuel_tank_volume_gallons + fuel_type + highway_fuel_economy + city_fuel_economy + power + torque + transmission + transmission_display + wheel_system + wheel_system_display + wheelbase_inches + back_legroom_inches + length_inches + width_inches + height_inches + engine_type + engine_displacement + horsepower + daysonmarket + description + interior_color + major_options + maximum_seating + year + fleet+ has_accidents + isCab + is_new + mileage + owner_count + salvage ,data = complete_data_train, 
+                       num.trees = 1200, mtry = 15, splitrule='variance')
+
+pred = predict(forest_ranger, data = complete_data_test)
+rmse_forest_ranger = sqrt(mean((pred$predictions - complete_data_test$price)^2)); rmse_forest_ranger
+```
+Initially we decided to not use variables like seller rating and front legroom inches due to their low correlation with price, however adding these to the model produced the lowest rmse as compared to removing them in this model.
+
+##FINAL MODEL
+```{r}
+forest_ranger = ranger(price~make_name + model_name + trim_name + body_type+ fuel_tank_volume_gallons + fuel_type + highway_fuel_economy + city_fuel_economy + power + torque + transmission + transmission_display + wheel_system + wheel_system_display + wheelbase_inches + back_legroom_inches + front_legroom_inches + length_inches + width_inches + height_inches + engine_type + engine_displacement + horsepower + daysonmarket + description + interior_color + major_options + maximum_seating + year + fleet+ has_accidents + isCab + is_new + mileage + owner_count + salvage + seller_rating,data = complete_data_train, 
+                       num.trees = 1200, mtry = 15, splitrule='variance')
+
+pred = predict(forest_ranger, data = complete_data_test)
+rmse_forest_ranger = sqrt(mean((pred$predictions - complete_data_test$price)^2)); rmse_forest_ranger
+
+
+submissionFile = data.frame(id = complete_data_test$id, price = pred$predictions)
+write.csv(submissionFile, '/Users/muskan/Desktop/Columbia Documents/Semester 1/Frameworks_and_Methods_1/Datasets/submissionFileReport.csv',row.names = F)
+```
+
+
+##WHAT DID NOT WORK
+
+Different ways tried to impute missing values: 
+1. Imputing numerical NAs using __Mean__
+2. Imputing NAs using __Median__
+3. Converting all categorical blank and NA values to __unknown__
+the above imputation methods worked but in the final model, mice library was used to impute the missing values which proved to be more efficient and time saving.
+
+Attempted __One-Hot Encoding__ for __XGBOOST__, which initially resulted in an error during execution, prompting the exploration of alternative encoding methods.
+
+Employed XGBOOST for prediction, but the process took an extensive 6-7 hours without yielding satisfactory results. Upon completion, the model produced an unusually high RMSE, leading to its exclusion from the final model.
+
+Explored the __extraction__ of power and torque from variables, but due to its negligible impact on reducing RMSE, this approach was dismissed in the final model.
+
+Considered converting integers greater than 4 to '5+' for maximum seating, but this strategy was omitted from the final model.
+
+Contemplated converting decimal ratings to integers for the rating variable, but the approach did not contribute significantly to RMSE reduction and was consequently excluded.
+
+Initially used the __forcats library__ to group rare values into "Others," but an alternative library was later employed for this purpose in the final model.
+
+Attempted model optimization through __Cross-Validation (CV)__ and tuning parameters automatically, but the process proved excessively time-consuming and resource-intensive, necessitating the exploration of more efficient alternatives.
+
+Employed __Dummy Variables__ and One-Hot Encoding using the __recipe__ and __vtreat library__, but this approach led to memory exhaustion and an impractical number of columns, prompting the adoption of a different encoding strategy in the final model.
+
+Tested __Regression__ and __GBM__, but these methods resulted in a high RMSE, leading to their exclusion from the final model.
+
+##FUTURE CONSIDERATIONS
+
+__Refining Data Treatment:__ Implement more robust data treatment methods, such as exploring advanced encoding techniques suitable for the chosen model, ensuring that One-Hot Encoding is appropriately used for models like XGBOOST without encountering errors.
+
+__Optimizing Model Tuning:__ Focus on optimizing model tuning efficiency to avoid prolonged runtimes and high RMSE, ensuring a more streamlined and effective tuning process.
+
+__Exploring Advanced Techniques:__ Broaden the exploration of advanced modeling techniques, considering not only GBM and XGBOOST but also assessing the suitability of other algorithms like Random Forests or ensemble methods for improved predictive accuracy.
+
+__Prudent Feature Engineering:__ Exercise caution in feature engineering, considering the impact of transforming variables, and evaluate their effectiveness in reducing RMSE before including them in the final model.
+
+__Memory-Efficient Encoding:__ Adopt memory-efficient encoding methods for categorical variables, leveraging libraries like vtreat and optimizing the process to prevent memory exhaustion while creating dummy variables.
+
+__Efficient Cross-Validation:__ Optimize cross-validation techniques, balancing the trade-off between thorough model evaluation and computational efficiency, exploring options like Stratified K-Fold to ensure representative splits.
+
+__Experimenting with Ensemble Techniques:__ Experiment with ensemble techniques, combining multiple models to enhance predictive performance and considering ensemble libraries like mlr3ensemble.
+
+__Focused Variable Engineering:__ Focus on variable engineering that aligns with the model's objectives, avoiding overly complex transformations or encoding methods that might not contribute significantly to predictive performance.
+
+__Prudent Data Scaling:__ Apply prudent data scaling techniques, ensuring that variables are appropriately scaled to prevent biases in models sensitive to feature magnitudes.
+
+__Continuous Learning Approach:__ Embrace a continuous learning approach, staying updated on the latest methodologies, tools, and libraries to facilitate effective and efficient model training and tuning processes.
